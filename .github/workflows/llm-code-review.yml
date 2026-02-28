@@ -31,62 +31,12 @@ jobs:
             你是资深代码审查专家，请严格检查以下代码差异。
 
             ⚠️【必须遵守】
-            - 只允许输出 JSON
-            - 不要输出 Markdown
+            - 判断只有当代码质量有问题时才加评论，否则请直接回复“/lgtm”。
             - 不要解释
             - 不要多余文本
 
-            JSON 格式如下：
-            {
-              "can_merge": true/false,
-              "issues": [
-                {
-                  "file": "文件路径",
-                  "line": 123,
-                  "problem": "问题描述"
-                }
-              ],
-              "suggestions": ["建议1", "建议2"]
-            }
           temperature: 0.2
           top_p: 1
           MAX_PATCH_LENGTH: 50000
           IGNORE_PATTERNS: "/node_modules,*.md,/dist,/.github"
           FILE_PATTERNS: "*.java,*.go,*.py,*.vue,*.ts,*.js,*.css,*.scss,*.html"
-
-      # 3️⃣ 从 LLM Code Review 结果解析 JSON（关键）
-      - name: Parse LLM result from LLM Code Review step
-        id: parse
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
-        run: |
-          # 获取 LLM Code Review 的结果
-          llm_result="${{ steps.llm-code-review.outputs.result }}"
-          
-          can_merge="false"
-          
-          # 解析 JSON 结果
-          if [[ "$llm_result" =~ \{.*\} ]]; then
-            raw_json=$(echo "$llm_result" | grep -o '\{.*\}')
-            echo "=== PARSED JSON ==="
-            echo "$raw_json"
-          
-            can_merge=$(echo "$raw_json" | jq -r '.can_merge')
-          else
-            echo "No valid JSON found in LLM result"
-          fi
-          
-          echo "can_merge=$can_merge"
-          
-          echo "can_merge=$can_merge" >> $GITHUB_ENV
-
-      # 4️⃣ 自动 rebase 合并
-      - name: Auto merge PR (rebase)
-        if: steps.parse.outputs.can_merge == 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr merge ${{ github.event.pull_request.number }} \
-            --rebase \
-            --auto \
-            --delete-branch
