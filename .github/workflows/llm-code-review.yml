@@ -1,0 +1,68 @@
+name: LLM Code Review
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+jobs:
+  llm-code-review:
+    runs-on: ubuntu-latest
+    steps:
+      # 1️⃣ 拉取代码
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # 2️⃣ 安装依赖（可选，如果 Action 已自带 Python/Node 可忽略）
+      - name: Install dependencies
+        run: |
+          pip install openai
+
+      # 3️⃣ 调用 LLM 做代码 review
+      - name: Run LLM Code Review
+        id: review
+        uses: fit2cloud/LLM-CodeReview-Action@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.ALIYUN_LLM_API_KEY }}
+          LANGUAGE: Chinese
+          OPENAI_API_ENDPOINT: https://dashscope.aliyuncs.com/compatible-mode/v1
+          MODEL: qwen3-coder-plus
+          PROMPT: |
+            请检查下面的代码差异是否有不规范、潜在的问题或者优化建议，用中文回答。
+            输出 JSON 格式：
+            {
+              "can_merge": true/false,
+              "issues": [
+                {"file": "文件路径", "line": 行号, "problem": "问题描述"}
+              ],
+              "suggestions": ["优化建议1","优化建议2"]
+            }
+          top_p: 1
+          temperature: 0.2
+          MAX_PATCH_LENGTH: 50000
+          IGNORE_PATTERNS: "/node_modules,*.md,/dist,/.github"
+          FILE_PATTERNS: "*.java,*.go,*.py,*.vue,*.ts,*.js,*.css,*.scss,*.html"
+
+      # 4️⃣ 解析 LLM 输出 JSON 并设置 output
+      - name: Parse LLM JSON
+        id: parse
+        run: |
+          import json, os
+          review_output = os.environ.get("REVIEW_OUTPUT") or os.environ.get("LLM_OUTPUT")
+          data = json.loads(review_output)
+          can_merge = str(data.get("can_merge", False)).lower()
+          print(f"::set-output name=can_merge::{can_merge}")
+        env:
+          REVIEW_OUTPUT: ${{ steps.review.outputs.review_json }}
+
+      # 5️⃣ 自动合并 PR（仅当 can_merge 为 true）
+      - name: Auto merge if approved
+        if: steps.parse.outputs.can_merge == 'true'
+        uses: peter-evans/merge-pull-request@v5
+        with:
+          merge-method: merge
+          commit-message: "Auto merged by LLM Code Review"
